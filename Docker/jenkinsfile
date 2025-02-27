@@ -1,0 +1,76 @@
+pipeline {
+    agent any
+    environment {
+        AWS_REGION = 'us-east-1'
+        ECS_CLUSTER = 'flask-cluster'
+        ECS_SERVICE = 'flask-service'
+        REPO_URL = 'https://github.com/joel191/python-flask-app.git'
+        IMAGE_NAME = 'flask-app'
+        ECR_URL = '211125415085.dkr.ecr.us-east-1.amazonaws.com/flask-app:latest'
+    }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: "${REPO_URL}"
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh '''
+                    cd Docker
+                    docker build -t ${IMAGE_NAME} .
+                    docker run -itd --name cont1 -p 5000:5000 ${IMAGE_NAME}
+                    '''
+                }
+            }
+        }
+        stage('Push to ECR') {
+            steps {
+                withCredentials([aws(credentialsId: 'aws_credentials', accessKeyVariable: 'AWS_ACCESS_KEY', secretKeyVariable: 'AWS_SECRET_KEY')]) {
+                    script {
+                        sh '''
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY
+                        aws configure set aws_secret_access_key $AWS_SECRET_KEY
+                        aws configure set region $AWS_REGION
+
+                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URL
+                        docker tag ${IMAGE_NAME} $ECR_URL
+                        docker push $ECR_URL
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Deploy to ECS') {
+            steps {
+                script {
+                    withCredentials([aws(credentialsId: 'aws_credentials', accessKeyVariable: 'AWS_ACCESS_KEY', secretKeyVariable: 'AWS_SECRET_KEY')]) {
+                        sh '''
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY
+                        aws configure set aws_secret_access_key $AWS_SECRET_KEY
+                        aws configure set region $AWS_REGION
+
+                        aws ecs register-task-definition \
+                            --family flask-app \
+                            --network-mode bridge \
+                            --container-definitions '[{
+                                "name": "flask-app",
+                                "image": "'"$ECR_URL"'",
+                                "memory": 512,
+                                "cpu": 256,
+                                "essential": true,
+                                "portMappings": [{"containerPort": 5000, "hostPort": 5000}]
+                            }]'
+
+                        aws ecs update-service \
+                            --cluster $ECS_CLUSTER \
+                            --service $ECS_SERVICE \
+                            --force-new-deployment
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}

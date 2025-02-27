@@ -1,0 +1,49 @@
+pipeline {
+    agent any
+    environment {
+        AWS_REGION = 'us-east-1'
+        REPO_URL = 'https://github.com/joel191/python-flask-app.git'
+        IMAGE_NAME = 'flask-app'
+        ECR_URL = 'i211125415085.dkr.ecr.us-east-1.amazonaws.com/flask-app:latest'
+        EKS_CLUSTER_NAME = 'eks-cluster'
+    }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: "${REPO_URL}"
+                sh ' cd kubernetes'
+            }
+        }
+        stage('create Eks') {
+            steps {
+                withCredentials([aws(credentialsId: 'aws_credentials', accessKeyVariable: 'AWS_ACCESS_KEY', secretKeyVariable: 'AWS_SECRET_KEY')]) {
+                    script {
+                        sh '''
+                        aws configure set region $AWS_REGION
+                        if ! eksctl get cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION; then
+                            eksctl create cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION --fargate
+                        else
+                            echo "Cluster already exists."
+                        fi
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Deploy to Eks') {
+            steps {
+                withCredentials([aws(credentialsId: 'aws_credentials', accessKeyVariable: 'AWS_ACCESS_KEY', secretKeyVariable: 'AWS_SECRET_KEY')]) {
+                    script {
+                        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',credentialsId: 'aws_credentials']]) {
+                        sh '''
+                        cd kubernetes
+                        kubectl create -f Deployment.yml
+
+                        '''
+                    }
+                }
+                }
+            }
+        }
+    }
+}
