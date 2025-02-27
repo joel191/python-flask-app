@@ -4,7 +4,7 @@ pipeline {
         AWS_REGION = 'us-east-1'
         REPO_URL = 'https://github.com/joel191/python-flask-app.git'
         IMAGE_NAME = 'flask-app'
-        ECR_URL = 'i211125415085.dkr.ecr.us-east-1.amazonaws.com/flask-app:latest'
+        ECR_URL = '211125415085.dkr.ecr.us-east-1.amazonaws.com/flask-app:latest'
         EKS_CLUSTER_NAME = 'eks-cluster'
     }
     stages {
